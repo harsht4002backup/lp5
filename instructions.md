@@ -1,4 +1,4 @@
-If there is no c++ compiler(Mingw is ok too):
+If there is no c++ compiler(Mingw64 is ok too, do the install if Mingw is 32):
 
 1. Download msys https://www.msys2.org/ -> msys2-x86_64-20260322.exe
 2. Run the installer.
