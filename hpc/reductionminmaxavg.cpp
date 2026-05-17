@@ -80,6 +80,310 @@ int main() {
 }
 
 /*
+## Theory: Parallel Reduction for Min, Max, Sum, and Average
+
+Parallel reduction is a technique used in parallel programming to combine multiple values into a single result efficiently. Instead of processing elements one by one sequentially, the work is divided among multiple threads, and partial results are combined at the end.
+
+In OpenMP, this is commonly done using the `reduction` clause.
+
+---
+
+# 1. What is Reduction?
+
+A **reduction operation** takes a collection of values and reduces them to one final value using an operation such as:
+
+* Addition (`+`) → Sum
+* Minimum (`min`) → Minimum value
+* Maximum (`max`) → Maximum value
+* Average → Sum ÷ Number of elements
+
+Example:
+
+Array:
+
+```text
+[10, 20, 5, 40, 15]
+```
+
+Results:
+
+```text
+Sum = 90
+Min = 5
+Max = 40
+Average = 18
+```
+
+---
+
+# 2. Sequential vs Parallel Approach
+
+## Sequential Method
+
+In a normal sequential program:
+
+* One CPU core processes all elements
+* Each iteration runs one after another
+
+Example for sum:
+
+```cpp
+sum = sum + arr[i];
+```
+
+Time complexity:
+
+```text
+O(n)
+```
+
+---
+
+## Parallel Method
+
+In parallel reduction:
+
+* Array is divided among multiple threads
+* Each thread computes a partial result
+* Partial results are merged automatically
+
+Example:
+
+Thread 1:
+
+```text
+10 + 20 = 30
+```
+
+Thread 2:
+
+```text
+5 + 40 = 45
+```
+
+Thread 3:
+
+```text
+15
+```
+
+Final reduction:
+
+```text
+30 + 45 + 15 = 90
+```
+
+This improves performance for large datasets.
+
+---
+
+# 3. OpenMP Reduction Clause
+
+OpenMP provides a built-in `reduction` clause.
+
+Syntax:
+
+```cpp
+#pragma omp parallel for reduction(operator:variable)
+```
+
+Example:
+
+```cpp
+#pragma omp parallel for reduction(+:sum)
+```
+
+Meaning:
+
+* Every thread gets its own private copy of `sum`
+* Threads compute partial sums independently
+* OpenMP combines all partial sums automatically at the end
+
+---
+
+# 4. Parallel Sum Operation
+
+## Working
+
+Each thread calculates part of the array sum.
+
+Formula:
+
+\text{Sum} = \sum_{i=0}^{n-1} a_i
+
+Example:
+
+```cpp
+#pragma omp parallel for reduction(+:sum)
+for(int i=0; i<n; i++) {
+    sum += arr[i];
+}
+```
+
+Advantages:
+
+* Faster for large arrays
+* Avoids race conditions
+* Simple implementation
+
+---
+
+# 5. Parallel Minimum Operation
+
+## Working
+
+Each thread finds a local minimum.
+OpenMP combines all local minima into the global minimum.
+
+Formula:
+
+\text{Min} = \min(a_0,a_1,a_2,\dots,a_{n-1})
+
+Example:
+
+```cpp
+#pragma omp parallel for reduction(min:minValue)
+for(int i=0; i<n; i++) {
+    if(arr[i] < minValue)
+        minValue = arr[i];
+}
+```
+
+---
+
+# 6. Parallel Maximum Operation
+
+## Working
+
+Each thread computes a local maximum.
+
+Formula:
+
+\text{Max} = \max(a_0,a_1,a_2,\dots,a_{n-1})
+
+Example:
+
+```cpp
+#pragma omp parallel for reduction(max:maxValue)
+for(int i=0; i<n; i++) {
+    if(arr[i] > maxValue)
+        maxValue = arr[i];
+}
+```
+
+---
+
+# 7. Parallel Average Operation
+
+Average is calculated using:
+
+\text{Average} = \frac{\sum_{i=0}^{n-1} a_i}{n}
+
+Steps:
+
+1. Compute parallel sum
+2. Divide by total number of elements
+
+Example:
+
+```cpp
+average = (double)sum / n;
+```
+
+---
+
+# 8. Why Reduction is Needed
+
+Without reduction, multiple threads may try to modify the same variable simultaneously.
+
+This causes:
+
+* Incorrect outputs
+* Data inconsistency
+* Race conditions
+
+Example problem:
+
+```cpp
+sum += arr[i];
+```
+
+If two threads update `sum` at the same time, one update may be lost.
+
+Reduction solves this by:
+
+* Giving each thread a private copy
+* Combining results safely afterward
+
+---
+
+# 9. Advantages of Parallel Reduction
+
+## Faster Execution
+
+Work is distributed among CPU cores.
+
+## Better CPU Utilization
+
+Multiple cores execute simultaneously.
+
+## Scalability
+
+Performance improves with larger datasets and more cores.
+
+## Simpler Parallel Programming
+
+OpenMP handles synchronization internally.
+
+---
+
+# 10. Limitations
+
+## Small Arrays
+
+Parallel overhead may make execution slower than sequential execution.
+
+## Thread Creation Cost
+
+Creating threads requires additional time.
+
+## Hardware Dependency
+
+Performance depends on number of CPU cores.
+
+---
+
+# 11. Applications of Parallel Reduction
+
+Parallel reduction is widely used in:
+
+* Scientific computing
+* Machine learning
+* Data analytics
+* Image processing
+* Matrix operations
+* GPU programming
+* Big data processing
+
+---
+
+# 12. Conclusion
+
+Parallel reduction is an efficient parallel programming technique used to compute aggregate operations such as:
+
+* Minimum
+* Maximum
+* Sum
+* Average
+
+Using OpenMP reduction clauses:
+
+* Improves execution speed
+* Prevents race conditions
+* Simplifies multithreaded programming
+
+It is one of the most fundamental concepts in parallel computing and high-performance applications.
+
 Your program correctly implements **Parallel Reduction Operations using OpenMP** for:
 
 * Sum

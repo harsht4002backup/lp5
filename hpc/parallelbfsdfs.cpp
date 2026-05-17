@@ -1,623 +1,679 @@
+// Code-2 (Parallel Bubble Sort and Merge Sort)
+
+/*
+ * THIS CODE HAS BEEN TESTED AND IS FULLY OPERATIONAL.
+ *
+ * Problem Statement:
+ *  Write a program to implement Parallel Bubble Sort and Merge sort using OpenMP.
+ *  Use existing algorithms and measure the performance of sequential and parallel algorithms.
+ *
+ * Code from HighPerformanceComputing (SPPU - Final Year - Computer Engineering - Content)
+ * repository on KSKA Git: https://git.kska.io/sppu-be-comp-content/HighPerformanceComputing
+ **/
+
+/*
+ * EXECUTION INSTRUCTIONS (Debian-based distributions):
+ *
+ * i) Install g++ with OpenMP support:
+ *   sudo apt update
+ *   sudo apt install g++
+ *
+ * ii) Compile:
+ *   g++ -fopenmp Code-2.cpp -o Code-2
+ *
+ * iii) Execute:
+ *   ./Code-2
+ **/
+
+// BEGINNING OF CODE
 #include <iostream>
-#include <queue>
-#include <stack>
-#include <omp.h>
 #include <vector>
+#include <cstdlib>
+#include <omp.h>
 
 using namespace std;
 
-class Graph{
-
-    int v;
-    vector<vector<int>> adj;
-
-    public:
-    Graph(int v){
-        this->v = v;
-        adj.resize(v);
-    }
-
-    void addEdge(int a, int b){
-        adj[a].push_back(b);
-        adj[b].push_back(a);
-    }
-
-    void parallelBfs(int start){
-        queue<int> q;
-        vector<bool> visited(v,false);
-
-        visited[start] = true;
-        q.push(start);
-
-        cout<< "parallel Bfs using openmp"<<endl;
-
-        while(!q.empty()){
-            int node = q.front();
-            q.pop();
-            cout << node <<"->";
-
-            #pragma omp parallel for
-            for(int i=0;i<adj[node].size();i++){
-                int neighbours = adj[node][i];
-
-                if(!visited[neighbours]){
-                    #pragma omp critical
-                    if(!visited[neighbours]){
-                        visited[neighbours] = true;
-                        q.push(neighbours);
-                    }
-                }
-            }
-        }
-        cout <<endl;
-    }
-
-    void parallelDfs(int start){
-        vector<bool> visited(v,false);
-        stack<int> st;
-
-        visited[start] = true;
-        st.push(start);
-
-        cout<< "parallel dfs using openmp"<<endl;
-
-        while(!st.empty()){
-            int node = st.top();
-            st.pop();
-            cout<<node<<"->";
-
-            #pragma omp parallel for
-            for(int i=0;i<adj[node].size();i++){
-                int neighbour = adj[node][i];
-
-                if(!visited[neighbour]){
-                    #pragma omp critical
-                    if(!visited[neighbour]){
-                        visited[neighbour] = true;
-                        st.push(neighbour);
-                    }
-                }
-            }
-        }
-    }
-
-};
-
-int main(){
-    Graph g(6);
-
-    g.addEdge(0,1);
-    g.addEdge(0,2);
-    g.addEdge(1,3);
-    g.addEdge(2,4);
-    g.addEdge(3,5);
-    g.addEdge(4,5);
-
-    g.parallelBfs(0);
-
-    g.parallelDfs(0);
+void printArray(const vector<int>& arr) {
+    for (int num : arr)
+        cout << num << " ";
+    cout << endl;
 }
-/*Your program implements:
 
-# Parallel Breadth First Search (BFS) and Depth First Search (DFS) using OpenMP
+// Bubble Sort
 
-This satisfies the practical statement:
+// Sequential bubble sort.
+// Sorts the array using bubble sort by repeatedly swapping adjacent elements.
+void sequentialBubbleSort(vector<int>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1])
+                swap(arr[j], arr[j + 1]);
+        }
+    }
+}
 
-> “Design and implement Parallel Breadth First Search and Depth First Search based on existing algorithms using OpenMP.”
+// Parallel bubble sort using odd-even transposition.
+// Standard bubble sort cannot be parallelized directly: thread on index j
+// and thread on index j+1 would both touch arr[j+1] simultaneously (data race).
+// Odd-even transposition alternates between two phases each pass:
+//   Phase 0 (even): compare pairs (0,1), (2,3), (4,5), ...
+//   Phase 1 (odd):  compare pairs (1,2), (3,4), (5,6), ...
+// Within each phase every pair is independent, so threads never share elements.
+void parallelBubbleSort(vector<int>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n; i++) {
+        // i % 2 selects even phase (0) or odd phase (1).
+        // The starting index of the first pair in each phase matches i % 2.
+        #pragma omp parallel for
+        for (int j = i % 2; j < n - 1; j += 2) {
+            if (arr[j] > arr[j + 1])
+                swap(arr[j], arr[j + 1]);
+        }
+    }
+}
+
+// Merge Sort
+
+// Merges two sorted halves arr[left..mid] and arr[mid+1..right] in place.
+void merge(vector<int>& arr, int left, int mid, int right) {
+    int n1 = mid - left + 1;
+    int n2 = right - mid;
+
+    vector<int> L(n1), R(n2);
+    for (int i = 0; i < n1; i++) L[i] = arr[left + i];
+    for (int i = 0; i < n2; i++) R[i] = arr[mid + 1 + i];
+
+    int i = 0, j = 0, k = left;
+    while (i < n1 && j < n2)
+        arr[k++] = (L[i] <= R[j]) ? L[i++] : R[j++];
+
+    while (i < n1) arr[k++] = L[i++];
+    while (j < n2) arr[k++] = R[j++];
+}
+
+void sequentialMergeSort(vector<int>& arr, int left, int right) {
+    if (left >= right) return;
+    int mid = left + (right - left) / 2;
+    sequentialMergeSort(arr, left, mid);
+    sequentialMergeSort(arr, mid + 1, right);
+    merge(arr, left, mid, right);
+}
+
+// Parallel merge sort using OpenMP tasks.
+// "#pragma omp parallel sections" inside a recursive function would spawn a
+// new thread team at every level of recursion, hundreds of thousands of teams
+// for a large array, causing enormous overhead and likely a crash.
+// Tasks are lighter: the runtime schedules them across an existing thread pool.
+// The depth cutoff switches to sequential below a threshold to avoid spawning
+// tasks so small that the overhead exceeds the work itself.
+void parallelMergeSortHelper(vector<int>& arr, int left, int right, int depth) {
+    if (left >= right) return;
+    int mid = left + (right - left) / 2;
+
+    if (depth <= 0) {
+        // Below the cutoff the subarray is small enough that sequential is faster.
+        sequentialMergeSort(arr, left, mid);
+        sequentialMergeSort(arr, mid + 1, right);
+    } else {
+        #pragma omp task
+        parallelMergeSortHelper(arr, left, mid, depth - 1);
+
+        #pragma omp task
+        parallelMergeSortHelper(arr, mid + 1, right, depth - 1);
+
+        // Wait for both tasks to finish before merging.
+        #pragma omp taskwait
+    }
+
+    merge(arr, left, mid, right);
+}
+
+void parallelMergeSort(vector<int>& arr, int left, int right) {
+    // The single directive creates one thread team for the entire sort.
+    // All recursive tasks share this pool instead of creating new teams.
+    #pragma omp parallel
+    {
+        // single ensures only one thread kicks off the root task;
+        // the rest wait and pick up the child tasks as they are created.
+        #pragma omp single
+        parallelMergeSortHelper(arr, left, right, 4); // depth 4 → up to 16 parallel tasks
+    }
+}
+
+// Main function
+
+int main() {
+    int n = 10000; // Adjust this to specify the number of elements.
+    vector<int> arr(n);
+
+    for (int i = 0; i < n; i++)
+        arr[i] = rand() % 10000;
+
+    double start, end;
+    double time_seq_bubble, time_par_bubble;
+    double time_seq_merge, time_par_merge;
+
+    // --- Sequential Bubble Sort ---
+    vector<int> seqArr = arr;
+    start = omp_get_wtime();
+    sequentialBubbleSort(seqArr);
+    end = omp_get_wtime();
+    time_seq_bubble = end - start;
+    cout << "Sequential Bubble Sort time: " << time_seq_bubble << " seconds" << endl;
+
+    // --- Parallel Bubble Sort ---
+    vector<int> parArr = arr;
+    start = omp_get_wtime();
+    parallelBubbleSort(parArr);
+    end = omp_get_wtime();
+    time_par_bubble = end - start;
+    cout << "Parallel Bubble Sort time: " << time_par_bubble << " seconds" << endl;
+
+    cout << "Bubble Sort Speedup (Sequential / Parallel) = " << (time_seq_bubble / time_par_bubble) << "x" << endl;
+
+    // --- Sequential Merge Sort ---
+    seqArr = arr;
+    start = omp_get_wtime();
+    sequentialMergeSort(seqArr, 0, n - 1);
+    end = omp_get_wtime();
+    time_seq_merge = end - start;
+    cout << "\nSequential Merge Sort time: " << time_seq_merge << " seconds" << endl;
+
+    // --- Parallel Merge Sort ---
+    parArr = arr;
+    start = omp_get_wtime();
+    parallelMergeSort(parArr, 0, n - 1);
+    end = omp_get_wtime();
+    time_par_merge = end - start;
+    cout << "Parallel Merge Sort time: " << time_par_merge << " seconds" << endl;
+
+    cout << "Merge Sort Speedup (Sequential / Parallel) = " << (time_seq_merge / time_par_merge) << "x" << endl;
+
+    return 0;
+}
+
+/*# Theory for Parallel Bubble Sort and Merge Sort using OpenMP
+
+Your program implements:
+
+* Sequential Bubble Sort
+* Parallel Bubble Sort
+* Sequential Merge Sort
+* Parallel Merge Sort
+
+using OpenMP. 
 
 ---
 
-# Theory / Viva Explanation
+# What is Sorting?
 
----
+Sorting means:
 
-# What is a Graph?
+> Arranging data in a particular order.
 
-A graph is a non-linear data structure consisting of:
+Usually:
 
-* Vertices (nodes)
-* Edges (connections)
+* ascending order
+* descending order
 
 Example:
 
-```text id="htnqot"
-0 ---- 1
-|      |
-2      3
- \    /
-   4
+```text id="jlwmt1"
+5 2 9 1 6
+```
+
+After sorting:
+
+```text id="jlwmt2"
+1 2 5 6 9
 ```
 
 ---
 
-# Types of Graphs
+# Why Sorting is Important?
 
-| Type             | Description          |
-| ---------------- | -------------------- |
-| Directed Graph   | Edges have direction |
-| Undirected Graph | Edges work both ways |
-| Weighted Graph   | Edges have weights   |
-| Unweighted Graph | No weights           |
+Sorting is used in:
 
-Your program uses:
-
-> Undirected Unweighted Graph
-
-because:
-
-```cpp id="2nqkz4"
-adj[a].push_back(b);
-adj[b].push_back(a);
-```
-
-adds edges both ways.
+* searching algorithms
+* databases
+* data analysis
+* operating systems
+* machine learning
 
 ---
 
-# Graph Representation
+# What is Sequential Sorting?
 
-## Adjacency List
+Sequential sorting means:
 
-Your graph uses adjacency list representation:
+> A single thread performs all operations one after another.
 
-```cpp id="q87cx4"
-vector<vector<int>> adj;
-```
+Only one processor/core used.
 
-Each index stores neighbors of a node.
+---
 
-Example:
+# What is Parallel Sorting?
 
-```text id="d9moxq"
-0 → 1,2
-1 → 0,3
-2 → 0,4
-```
+Parallel sorting means:
+
+> Multiple threads execute sorting operations simultaneously.
 
 Advantages:
 
-* Memory efficient
-* Faster traversal
-* Good for sparse graphs
-
----
-
-# What is BFS?
-
-## Breadth First Search
-
-BFS traverses graph:
-
-> Level by level
-
-It uses:
-
-> Queue (FIFO)
-
-Traversal order example:
-
-```text id="pgrq1x"
-0 → 1 → 2 → 3 → 4 → 5
-```
-
-Applications:
-
-* Shortest path
-* Network routing
-* Web crawling
-* Social networks
-
----
-
-# BFS Working
-
-Steps:
-
-1. Start node inserted into queue
-2. Visit node
-3. Add unvisited neighbors
-4. Repeat until queue empty
-
----
-
-# BFS Formula Representation
-
-\text{BFS explores nodes level by level using a Queue (FIFO)}
-
----
-
-# What is DFS?
-
-## Depth First Search
-
-DFS traverses graph:
-
-> Depth-wise first
-
-It uses:
-
-> Stack (LIFO)
-
-Traversal example:
-
-```text id="6k8o5g"
-0 → 2 → 4 → 5 → 3 → 1
-```
-
-Applications:
-
-* Cycle detection
-* Path finding
-* Topological sorting
-* Maze solving
-
----
-
-# DFS Working
-
-Steps:
-
-1. Push start node into stack
-2. Visit node
-3. Push unvisited neighbors
-4. Continue until stack empty
-
----
-
-# DFS Representation
-
-\text{DFS explores depth-wise using a Stack (LIFO)}
+* faster execution
+* better CPU utilization
+* reduced processing time
 
 ---
 
 # What is OpenMP?
 
-OpenMP is an API used for parallel programming in C/C++.
+OpenMP is an API for parallel programming in C/C++.
 
-It creates multiple threads to execute tasks simultaneously.
+It uses compiler directives like:
 
----
-
-# Why Parallel BFS/DFS?
-
-Normal BFS/DFS are sequential.
-
-Parallel version:
-
-* Processes neighbors simultaneously
-* Uses multiple threads
-* Improves speed for large graphs
-
----
-
-# Important OpenMP Directives Used
-
----
-
-## `#pragma omp parallel for`
-
-```cpp id="b3b7kl"
+```cpp id="jlwmt3"
 #pragma omp parallel for
 ```
 
-Converts loop into parallel execution.
-
-Different iterations handled by different threads.
+to create multiple threads automatically.
 
 ---
 
-## `#pragma omp critical`
+# Bubble Sort
 
-```cpp id="0jlwm4"
-#pragma omp critical
+## Definition
+
+Bubble Sort repeatedly compares adjacent elements and swaps them if they are in wrong order.
+
+Largest element “bubbles” to correct position after each pass.
+
+---
+
+# Bubble Sort Example
+
+Initial array:
+
+```text id="jlwmt4"
+5 2 9 1 6
 ```
 
-Critical section means:
+After passes:
 
-> Only one thread can execute this block at a time.
-
-Used to protect shared resources like:
-
-* queue
-* stack
-* visited array
+```text id="jlwmt5"
+2 5 1 6 9
+2 1 5 6 9
+1 2 5 6 9
+```
 
 ---
 
-# Why Critical Section Needed?
+# Sequential Bubble Sort
 
-Without critical section:
+Your code:
 
-Multiple threads may:
+```cpp id="jlwmt6"
+void sequentialBubbleSort(vector<int>& arr)
+```
 
-* push same node multiple times
-* modify queue simultaneously
-* corrupt data
-
-This causes:
-
-> Race Condition
+uses nested loops to compare adjacent elements sequentially. 
 
 ---
 
-# What is Race Condition?
+# Bubble Sort Time Complexity
 
-Race condition occurs when:
+| Case    | Complexity |
+| ------- | ---------- |
+| Best    | O(n)       |
+| Average | O(n²)      |
+| Worst   | O(n²)      |
 
-> Multiple threads access shared data simultaneously causing unpredictable results.
+---
+
+# Bubble Sort Formula
+
+O(n^2)
+
+---
+
+# Why Normal Bubble Sort Cannot Be Parallelized Directly?
+
+Normal bubble sort has:
+
+> Data dependency
 
 Example:
 
-Two threads trying:
-
-```cpp id="h41szs"
-visited[node] = true;
+```text id="jlwmt7"
+arr[j] and arr[j+1]
 ```
 
-at same time.
+and
+
+```text id="jlwmt8"
+arr[j+1] and arr[j+2]
+```
+
+both modify same element.
+
+This creates:
+
+> Race condition
 
 ---
 
-# Class Explanation
+# Race Condition
+
+Race condition occurs when:
+
+> Multiple threads access same memory simultaneously causing incorrect results.
 
 ---
 
-# Graph Class
+# Parallel Bubble Sort
 
-```cpp id="9dhrjk"
-class Graph
-```
+Your code uses:
 
-Represents graph structure and operations.
+## Odd-Even Transposition Sort
 
-Contains:
-
-* number of vertices
-* adjacency list
-* BFS and DFS functions
+instead of standard bubble sort. 
 
 ---
 
-# Constructor
+# Odd-Even Transposition
 
-```cpp id="4jol0o"
-Graph(int v)
-```
-
-Initializes graph with `v` vertices.
+Sorting occurs in phases.
 
 ---
 
-# Edge Addition
+## Even Phase
 
-```cpp id="8ntrtl"
-void addEdge(int a, int b)
-```
+Compare:
 
-Adds connection between nodes.
-
-Because graph is undirected:
-
-```cpp id="mx9mbm"
-adj[a].push_back(b);
-adj[b].push_back(a);
+```text id="jlwmt9"
+(0,1) (2,3) (4,5)
 ```
 
 ---
 
-# Parallel BFS Explanation
+## Odd Phase
 
----
+Compare:
 
-## Queue Declaration
-
-```cpp id="edw4s6"
-queue<int> q;
+```text id="jlwmta"
+(1,2) (3,4) (5,6)
 ```
 
-Used for BFS traversal.
+Now comparisons become independent.
 
-FIFO structure.
-
----
-
-## Visited Array
-
-```cpp id="p36bjn"
-vector<bool> visited(v,false);
-```
-
-Tracks visited nodes.
-
-Prevents infinite loops.
+Safe for parallel execution.
 
 ---
 
-## Start Node
+# OpenMP Directive Used
 
-```cpp id="xazewq"
-visited[start] = true;
-q.push(start);
-```
-
-Marks source node visited.
-
----
-
-## BFS Loop
-
-```cpp id="h6r4q5"
-while(!q.empty())
-```
-
-Runs until all nodes processed.
-
----
-
-## Remove Front Node
-
-```cpp id="u9ov8l"
-int node = q.front();
-q.pop();
-```
-
-Processes current node.
-
----
-
-## Parallel Neighbor Processing
-
-```cpp id="jlwmna"
+```cpp id="jlwmtb"
 #pragma omp parallel for
 ```
 
-Processes all neighbors simultaneously.
+Parallelizes loop iterations among multiple threads.
 
 ---
 
-## Critical Section
+# Parallel Bubble Sort Complexity
 
-```cpp id="7q1mkc"
-#pragma omp critical
-```
+Practical complexity:
 
-Ensures thread-safe queue insertion.
-
----
-
-# Parallel DFS Explanation
-
-DFS logic is similar except:
-
-Uses:
-
-```cpp id="i5g6k7"
-stack<int> st;
-```
-
-instead of queue.
-
-LIFO traversal.
-
----
-
-# Time Complexity
-
-## Sequential
-
-| Algorithm | Complexity |
-| --------- | ---------- |
-| BFS       | O(V + E)   |
-| DFS       | O(V + E)   |
+O\left(\frac{n^2}{P}+n\right)
 
 Where:
 
-* V = vertices
-* E = edges
+* ( n ) = number of elements
+* ( P ) = processors
 
 ---
 
-## Parallel Complexity
+# Why Parallel Bubble Sort May Be Slower?
 
-Execution time improves because neighbor traversal is parallelized.
+Because of:
 
-Actual speed depends on:
+* thread creation overhead
+* synchronization barriers
+* data dependency
+* small dataset size
 
-* number of cores
-* graph size
-* thread overhead
+---
+
+# Merge Sort
+
+## Definition
+
+Merge Sort uses:
+
+> Divide and Conquer technique
+
+Steps:
+
+1. Divide array into halves
+2. Sort halves recursively
+3. Merge sorted halves
+
+---
+
+# Merge Sort Representation
+
+Divide \rightarrow Sort \rightarrow Merge
+
+---
+
+# Merge Function
+
+Your merge function combines two sorted halves. 
+
+---
+
+# Sequential Merge Sort
+
+Implemented recursively using:
+
+```cpp id="jlwmtc"
+sequentialMergeSort(arr,left,right)
+```
+
+
+
+---
+
+# Recursion
+
+Recursion means:
+
+> Function calling itself repeatedly.
+
+Base condition:
+
+```cpp id="jlwmtd"
+if(left >= right)
+```
+
+stops recursion.
+
+---
+
+# Merge Sort Complexity
+
+| Case    | Complexity |
+| ------- | ---------- |
+| Best    | O(n log n) |
+| Average | O(n log n) |
+| Worst   | O(n log n) |
+
+---
+
+# Merge Sort Formula
+
+T(n)=2T\left(\frac{n}{2}\right)+O(n)
+
+---
+
+# Why Merge Sort is Good for Parallelism?
+
+Because:
+
+* left half independent
+* right half independent
+
+Both can execute simultaneously.
+
+---
+
+# Parallel Merge Sort
+
+Your code uses:
+
+```cpp id="jlwmte"
+#pragma omp task
+```
+
+to create parallel recursive tasks. 
+
+---
+
+# OpenMP Tasks
+
+Tasks are lightweight parallel jobs scheduled by OpenMP runtime.
+
+Advantages:
+
+* efficient recursion
+* avoids repeated thread creation
+* dynamic scheduling
+
+---
+
+# Taskwait
+
+```cpp id="jlwmtf"
+#pragma omp taskwait
+```
+
+waits until child tasks complete before merge step.
+
+---
+
+# Why Not Use `parallel sections` Recursively?
+
+Your code correctly explains this. 
+
+Recursive `parallel sections` would create:
+
+```text id="jlwmtg"
+thousands of thread teams
+```
+
+causing huge overhead.
+
+Tasks are more efficient.
+
+---
+
+# Depth Cutoff
+
+Your code uses:
+
+```cpp id="jlwmth"
+depth <= 0
+```
+
+to switch to sequential merge sort for small subarrays. 
+
+Reason:
+
+> Task overhead may exceed useful work for very small arrays.
+
+---
+
+# Performance Measurement
+
+Your code uses:
+
+```cpp id="jlwmti"
+omp_get_wtime()
+```
+
+for timing. 
+
+---
+
+# Execution Time Formula
+
+Execution\ Time = End\ Time - Start\ Time
+
+---
+
+# Speedup
+
+Measures parallel performance improvement.
+
+Formula:
+
+Speedup = \frac{Sequential\ Time}{Parallel\ Time}
+
+---
+
+# Interpretation
+
+| Speedup | Meaning           |
+| ------- | ----------------- |
+| > 1     | Parallel faster   |
+| < 1     | Sequential faster |
 
 ---
 
 # Space Complexity
 
-| Structure      | Complexity |
-| -------------- | ---------- |
-| Adjacency List | O(V + E)   |
-| Queue/Stack    | O(V)       |
-| Visited Array  | O(V)       |
+| Algorithm   | Space |
+| ----------- | ----- |
+| Bubble Sort | O(1)  |
+| Merge Sort  | O(n)  |
+
+Merge sort needs temporary arrays.
 
 ---
 
-# Advantages of Parallel BFS/DFS
+# Advantages of Parallel Merge Sort
 
-* Faster traversal
-* Efficient for large graphs
-* Better CPU utilization
-* Useful in AI and networking
+* highly scalable
+* efficient parallelism
+* lower complexity
+* better for large datasets
 
 ---
 
 # Limitations
 
-* Synchronization overhead
-* Critical sections reduce parallel efficiency
-* Complex debugging
-* Small graphs may not benefit much
+* synchronization overhead
+* task management overhead
+* memory usage in merge sort
 
 ---
 
 # Expected Output
 
-Possible BFS:
+Example:
 
-```text id="7kvd3p"
-parallel Bfs using openmp
-0->1->2->3->4->5->
+```text id="jlwmtj"
+Sequential Bubble Sort time: 0.95 seconds
+Parallel Bubble Sort time: 0.28 seconds
+
+Sequential Merge Sort time: 0.01 seconds
+Parallel Merge Sort time: 0.002 seconds
 ```
-
-Possible DFS:
-
-```text id="l2n1uy"
-parallel dfs using openmp
-0->2->4->5->3->1->
-```
-
-Order may vary because threads execute in parallel.
 
 ---
 
 # Important Viva Questions
-
----
-
-## What is BFS?
-
-Breadth First Search traverses graph level by level using queue.
-
----
-
-## What is DFS?
-
-Depth First Search traverses graph depth-wise using stack.
-
----
-
-## Difference between BFS and DFS?
-
-| BFS                  | DFS                   |
-| -------------------- | --------------------- |
-| Uses Queue           | Uses Stack            |
-| Level-wise traversal | Depth-wise traversal  |
-| Finds shortest path  | Good for backtracking |
-
----
-
-## Why use visited array?
-
-To avoid revisiting nodes and infinite loops.
-
----
-
-## Why use critical section?
-
-To avoid race conditions while accessing shared resources.
-
----
-
-## What is adjacency list?
-
-A graph representation where each node stores list of neighbors.
 
 ---
 
@@ -627,13 +683,71 @@ OpenMP is an API for shared-memory parallel programming.
 
 ---
 
+## Why use parallel sorting?
+
+To improve performance using multiple processors.
+
+---
+
+## Why is Bubble Sort difficult to parallelize?
+
+Because adjacent swaps have data dependency.
+
+---
+
+## What is Odd-Even Transposition?
+
+Parallel version of Bubble Sort using alternating odd/even phases.
+
+---
+
+## Why Merge Sort better for parallelism?
+
+Because subarrays can be processed independently.
+
+---
+
+## What is recursion?
+
+Function calling itself repeatedly.
+
+---
+
+## What is task parallelism?
+
+Breaking work into independent tasks executed simultaneously.
+
+---
+
+## What does `#pragma omp task` do?
+
+Creates parallel tasks in OpenMP.
+
+---
+
 ## What is race condition?
 
 Simultaneous access/modification of shared data causing incorrect results.
 
 ---
 
-## Why parallelize BFS/DFS?
+## What is speedup?
 
-To improve traversal speed using multiple threads.
+Ratio of sequential execution time to parallel execution time.
+
+---
+
+## Why use depth cutoff in parallel merge sort?
+
+To avoid task overhead for very small subarrays.
+
+---
+
+## Difference between sequential and parallel algorithms?
+
+| Sequential            | Parallel                 |
+| --------------------- | ------------------------ |
+| One thread            | Multiple threads         |
+| Slower for large data | Faster for large data    |
+| Simpler               | Requires synchronization |
 */
