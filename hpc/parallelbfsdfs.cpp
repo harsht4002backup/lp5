@@ -1,198 +1,159 @@
-// Code-2 (Parallel Bubble Sort and Merge Sort)
-
-/*
- * THIS CODE HAS BEEN TESTED AND IS FULLY OPERATIONAL.
- *
- * Problem Statement:
- *  Write a program to implement Parallel Bubble Sort and Merge sort using OpenMP.
- *  Use existing algorithms and measure the performance of sequential and parallel algorithms.
- *
- * Code from HighPerformanceComputing (SPPU - Final Year - Computer Engineering - Content)
- * repository on KSKA Git: https://git.kska.io/sppu-be-comp-content/HighPerformanceComputing
- **/
-
-/*
- * EXECUTION INSTRUCTIONS (Debian-based distributions):
- *
- * i) Install g++ with OpenMP support:
- *   sudo apt update
- *   sudo apt install g++
- *
- * ii) Compile:
- *   g++ -fopenmp Code-2.cpp -o Code-2
- *
- * iii) Execute:
- *   ./Code-2
- **/
-
-// BEGINNING OF CODE
 #include <iostream>
 #include <vector>
-#include <cstdlib>
 #include <omp.h>
 
 using namespace std;
 
-void printArray(const vector<int>& arr) {
-    for (int num : arr)
-        cout << num << " ";
-    cout << endl;
-}
+// Undirected graph with parallel BFS and DFS traversal via OpenMP.
+class Graph {
+    int V;
+    vector<vector<int>> adj;
 
-// Bubble Sort
+public:
+    Graph(int V) {
+        this->V = V;
+        adj.resize(V);
+    }
 
-// Sequential bubble sort.
-// Sorts the array using bubble sort by repeatedly swapping adjacent elements.
-void sequentialBubbleSort(vector<int>& arr) {
-    int n = arr.size();
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = 0; j < n - i - 1; j++) {
-            if (arr[j] > arr[j + 1])
-                swap(arr[j], arr[j + 1]);
+    void addEdge(int u, int v) {
+        adj[u].push_back(v);
+        adj[v].push_back(u);
+    }
+
+    // Level-synchronous BFS: all nodes at the current depth (the "frontier")
+    // are expanded in parallel before moving to the next level. This is the
+    // natural unit of parallelism for BFS, processing individual nodes is too
+    // fine-grained for threads to be useful.
+    void parallelBFS(int start) {
+        vector<bool> visited(V, false);
+        vector<int> frontier;
+
+        visited[start] = true;
+        frontier.push_back(start);
+
+        cout << "Parallel BFS from node " << start << ": ";
+
+        while (!frontier.empty()) {
+            for (int u : frontier)
+                cout << u << " ";
+
+            vector<int> next_frontier;
+
+            // Each thread accumulates its own local candidates to avoid
+            // contention on a shared next_frontier vector.
+            #pragma omp parallel
+            {
+                vector<int> local_next;
+
+                // nowait: threads that finish early skip the implicit barrier
+                // and proceed directly to the merge below.
+                // schedule(dynamic): faster threads pick up remaining chunks
+                // when adjacency list sizes vary across nodes.
+                #pragma omp for nowait schedule(dynamic)
+                for (int i = 0; i < (int)frontier.size(); i++) {
+                    for (int v : adj[frontier[i]]) {
+                        // The check-and-set on visited[] must be a single
+                        // critical section — without it, two threads could
+                        // both see visited[v]==false and both enqueue v,
+                        // producing duplicates in the next frontier.
+                        bool should_visit = false;
+                        #pragma omp critical
+                        {
+                            if (!visited[v]) {
+                                visited[v] = true;
+                                should_visit = true;
+                            }
+                        }
+                        // local_next is thread-private so no lock needed here.
+                        if (should_visit)
+                            local_next.push_back(v);
+                    }
+                }
+
+                // Merge: one thread at a time appends its local results.
+                // This is a separate critical section from the one above
+                // so the two do not serialize against each other.
+                #pragma omp critical
+                {
+                    next_frontier.insert(next_frontier.end(),
+                                         local_next.begin(),
+                                         local_next.end());
+                }
+            } // implicit barrier: all threads finish before frontier is swapped
+
+            frontier = next_frontier;
         }
-    }
-}
 
-// Parallel bubble sort using odd-even transposition.
-// Standard bubble sort cannot be parallelized directly: thread on index j
-// and thread on index j+1 would both touch arr[j+1] simultaneously (data race).
-// Odd-even transposition alternates between two phases each pass:
-//   Phase 0 (even): compare pairs (0,1), (2,3), (4,5), ...
-//   Phase 1 (odd):  compare pairs (1,2), (3,4), (5,6), ...
-// Within each phase every pair is independent, so threads never share elements.
-void parallelBubbleSort(vector<int>& arr) {
-    int n = arr.size();
-    for (int i = 0; i < n; i++) {
-        // i % 2 selects even phase (0) or odd phase (1).
-        // The starting index of the first pair in each phase matches i % 2.
-        #pragma omp parallel for
-        for (int j = i % 2; j < n - 1; j += 2) {
-            if (arr[j] > arr[j + 1])
-                swap(arr[j], arr[j + 1]);
+        cout << endl;
+    }
+
+    // Iterative DFS using a vector as a stack (push_back/pop_back).
+    // vector is used instead of std::stack because std::stack cannot be
+    // safely shared across threads.
+    void parallelDFS(int start) {
+        vector<bool> visited(V, false);
+        vector<int> stack;
+
+        stack.push_back(start);
+
+        cout << "Parallel DFS from node " << start << ": ";
+
+        while (!stack.empty()) {
+            int u = stack.back();
+            stack.pop_back();
+
+            // A node may be pushed multiple times before it is marked visited
+            // (two threads can both see visited[v]==false). This guard ensures
+            // it is processed only once.
+            if (visited[u]) continue;
+            visited[u] = true;
+            cout << u << " ";
+
+            vector<int> to_push;
+
+            #pragma omp parallel
+            {
+                vector<int> local_push;
+
+                #pragma omp for nowait schedule(dynamic)
+                for (int i = 0; i < (int)adj[u].size(); i++) {
+                    // visited[] is only read here, not written, so no critical
+                    // section is needed. Stale reads may cause duplicates but
+                    // the guard above handles that safely.
+                    if (!visited[adj[u][i]])
+                        local_push.push_back(adj[u][i]);
+                }
+
+                #pragma omp critical
+                {
+                    to_push.insert(to_push.end(),
+                                   local_push.begin(),
+                                   local_push.end());
+                }
+            }
+
+            for (int v : to_push)
+                stack.push_back(v);
         }
+
+        cout << endl;
     }
-}
-
-// Merge Sort
-
-// Merges two sorted halves arr[left..mid] and arr[mid+1..right] in place.
-void merge(vector<int>& arr, int left, int mid, int right) {
-    int n1 = mid - left + 1;
-    int n2 = right - mid;
-
-    vector<int> L(n1), R(n2);
-    for (int i = 0; i < n1; i++) L[i] = arr[left + i];
-    for (int i = 0; i < n2; i++) R[i] = arr[mid + 1 + i];
-
-    int i = 0, j = 0, k = left;
-    while (i < n1 && j < n2)
-        arr[k++] = (L[i] <= R[j]) ? L[i++] : R[j++];
-
-    while (i < n1) arr[k++] = L[i++];
-    while (j < n2) arr[k++] = R[j++];
-}
-
-void sequentialMergeSort(vector<int>& arr, int left, int right) {
-    if (left >= right) return;
-    int mid = left + (right - left) / 2;
-    sequentialMergeSort(arr, left, mid);
-    sequentialMergeSort(arr, mid + 1, right);
-    merge(arr, left, mid, right);
-}
-
-// Parallel merge sort using OpenMP tasks.
-// "#pragma omp parallel sections" inside a recursive function would spawn a
-// new thread team at every level of recursion, hundreds of thousands of teams
-// for a large array, causing enormous overhead and likely a crash.
-// Tasks are lighter: the runtime schedules them across an existing thread pool.
-// The depth cutoff switches to sequential below a threshold to avoid spawning
-// tasks so small that the overhead exceeds the work itself.
-void parallelMergeSortHelper(vector<int>& arr, int left, int right, int depth) {
-    if (left >= right) return;
-    int mid = left + (right - left) / 2;
-
-    if (depth <= 0) {
-        // Below the cutoff the subarray is small enough that sequential is faster.
-        sequentialMergeSort(arr, left, mid);
-        sequentialMergeSort(arr, mid + 1, right);
-    } else {
-        #pragma omp task
-        parallelMergeSortHelper(arr, left, mid, depth - 1);
-
-        #pragma omp task
-        parallelMergeSortHelper(arr, mid + 1, right, depth - 1);
-
-        // Wait for both tasks to finish before merging.
-        #pragma omp taskwait
-    }
-
-    merge(arr, left, mid, right);
-}
-
-void parallelMergeSort(vector<int>& arr, int left, int right) {
-    // The single directive creates one thread team for the entire sort.
-    // All recursive tasks share this pool instead of creating new teams.
-    #pragma omp parallel
-    {
-        // single ensures only one thread kicks off the root task;
-        // the rest wait and pick up the child tasks as they are created.
-        #pragma omp single
-        parallelMergeSortHelper(arr, left, right, 4); // depth 4 → up to 16 parallel tasks
-    }
-}
-
-// Main function
+};
 
 int main() {
-    int n = 10000; // Adjust this to specify the number of elements.
-    vector<int> arr(n);
+    Graph g(6);
 
-    for (int i = 0; i < n; i++)
-        arr[i] = rand() % 10000;
+    g.addEdge(0, 1);
+    g.addEdge(0, 2);
+    g.addEdge(1, 3);
+    g.addEdge(1, 4);
+    g.addEdge(2, 5);
 
-    double start, end;
-    double time_seq_bubble, time_par_bubble;
-    double time_seq_merge, time_par_merge;
-
-    // --- Sequential Bubble Sort ---
-    vector<int> seqArr = arr;
-    start = omp_get_wtime();
-    sequentialBubbleSort(seqArr);
-    end = omp_get_wtime();
-    time_seq_bubble = end - start;
-    cout << "Sequential Bubble Sort time: " << time_seq_bubble << " seconds" << endl;
-
-    // --- Parallel Bubble Sort ---
-    vector<int> parArr = arr;
-    start = omp_get_wtime();
-    parallelBubbleSort(parArr);
-    end = omp_get_wtime();
-    time_par_bubble = end - start;
-    cout << "Parallel Bubble Sort time: " << time_par_bubble << " seconds" << endl;
-
-    cout << "Bubble Sort Speedup (Sequential / Parallel) = " << (time_seq_bubble / time_par_bubble) << "x" << endl;
-
-    // --- Sequential Merge Sort ---
-    seqArr = arr;
-    start = omp_get_wtime();
-    sequentialMergeSort(seqArr, 0, n - 1);
-    end = omp_get_wtime();
-    time_seq_merge = end - start;
-    cout << "\nSequential Merge Sort time: " << time_seq_merge << " seconds" << endl;
-
-    // --- Parallel Merge Sort ---
-    parArr = arr;
-    start = omp_get_wtime();
-    parallelMergeSort(parArr, 0, n - 1);
-    end = omp_get_wtime();
-    time_par_merge = end - start;
-    cout << "Parallel Merge Sort time: " << time_par_merge << " seconds" << endl;
-
-    cout << "Merge Sort Speedup (Sequential / Parallel) = " << (time_seq_merge / time_par_merge) << "x" << endl;
+    g.parallelBFS(0);
+    g.parallelDFS(0);
 
     return 0;
 }
-
 /*# Theory for Parallel Bubble Sort and Merge Sort using OpenMP
 
 Your program implements:
