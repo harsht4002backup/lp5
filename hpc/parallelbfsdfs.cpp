@@ -154,561 +154,368 @@ int main() {
 
     return 0;
 }
-/*# Theory for Parallel Bubble Sort and Merge Sort using OpenMP
+/*# ## Parallel BFS and DFS in Graphs
 
-Your program implements:
+Graphs are widely used in computer science to represent networks such as social media connections, maps, web pages, and communication systems. Traversing a graph means visiting all its vertices systematically. Two common traversal techniques are:
 
-* Sequential Bubble Sort
-* Parallel Bubble Sort
-* Sequential Merge Sort
-* Parallel Merge Sort
+* **Breadth First Search (BFS)**
+* **Depth First Search (DFS)**
 
-using OpenMP. 
+In parallel computing, these algorithms are modified so that multiple vertices can be processed simultaneously using multiple threads (for example, with OpenMP).
 
 ---
 
-# What is Sorting?
+# 1. Parallel Breadth First Search (BFS)
 
-Sorting means:
+## What is BFS?
 
-> Arranging data in a particular order.
+BFS visits graph vertices **level by level**.
 
-Usually:
+It starts from a source node:
 
-* ascending order
-* descending order
+1. Visit the source node
+2. Visit all its neighbors
+3. Visit neighbors of those neighbors
+4. Continue until all nodes are visited
+
+BFS generally uses a **queue** data structure.
+
+---
+
+## Example
+
+Consider the graph:
+
+```text
+    0
+   / \
+  1   2
+ / \   \
+3   4   5
+```
+
+Starting BFS from node `0`:
+
+```text
+Level 0 → 0
+Level 1 → 1, 2
+Level 2 → 3, 4, 5
+```
+
+Traversal order:
+
+```text
+0 → 1 → 2 → 3 → 4 → 5
+```
+
+---
+
+# Why Parallelize BFS?
+
+In BFS, all nodes at the same level are independent.
+
+For example:
+
+* Nodes `1` and `2` can be processed simultaneously.
+* Their neighbors can also be explored in parallel.
+
+This makes BFS naturally suitable for parallel execution.
+
+---
+
+## Working of Parallel BFS
+
+### Sequential BFS
+
+```text
+Take one node from queue
+Visit neighbors one by one
+Add unvisited neighbors to queue
+Repeat
+```
+
+### Parallel BFS
+
+```text
+Process multiple nodes of current level together
+Different threads explore different neighbors
+Threads cooperate to build next level
+```
+
+---
+
+## Parallel BFS using OpenMP
+
+Typically:
+
+* Multiple threads process vertices simultaneously
+* Shared structures:
+
+  * visited array
+  * queue/frontier
+
+OpenMP constructs used:
+
+* `#pragma omp parallel for`
+* Critical sections or atomic operations
+
+---
+
+## Advantages of Parallel BFS
+
+* Faster traversal on large graphs
+* Better CPU utilization
+* Useful in:
+
+  * shortest path problems
+  * social network analysis
+  * web crawling
+  * AI search problems
+
+---
+
+## Challenges in Parallel BFS
+
+### 1. Synchronization
+
+Multiple threads may try to:
+
+* visit same node
+* update queue simultaneously
+
+Requires:
+
+* locks
+* critical sections
+* atomic operations
+
+---
+
+### 2. Load Balancing
+
+Some nodes may have many neighbors while others have few.
+
+Result:
+
+* uneven workload among threads
+
+---
+
+### 3. Memory Overhead
+
+Maintaining parallel queues/frontiers increases memory usage.
+
+---
+
+# 2. Parallel Depth First Search (DFS)
+
+## What is DFS?
+
+DFS explores a graph **deeply first** before backtracking.
+
+It uses:
+
+* recursion
+* or stack
+
+---
+
+## Example
+
+Using same graph:
+
+```text
+    0
+   / \
+  1   2
+ / \   \
+3   4   5
+```
+
+DFS starting from `0`:
+
+```text
+0 → 1 → 3 → 4 → 2 → 5
+```
+
+DFS goes deep into one branch before returning.
+
+---
+
+# Why Parallelize DFS?
+
+DFS is harder to parallelize because traversal is inherently sequential.
+
+However:
+
+* Different branches/subtrees can sometimes be explored simultaneously.
 
 Example:
 
-```text id="jlwmt1"
-5 2 9 1 6
+After visiting node `0`:
+
+* one thread explores subtree of `1`
+* another explores subtree of `2`
+
+---
+
+## Working of Parallel DFS
+
+### Sequential DFS
+
+```text
+Visit node
+Recursively visit neighbors
+Backtrack
 ```
 
-After sorting:
+### Parallel DFS
 
-```text id="jlwmt2"
-1 2 5 6 9
-```
-
----
-
-# Why Sorting is Important?
-
-Sorting is used in:
-
-* searching algorithms
-* databases
-* data analysis
-* operating systems
-* machine learning
-
----
-
-# What is Sequential Sorting?
-
-Sequential sorting means:
-
-> A single thread performs all operations one after another.
-
-Only one processor/core used.
-
----
-
-# What is Parallel Sorting?
-
-Parallel sorting means:
-
-> Multiple threads execute sorting operations simultaneously.
-
-Advantages:
-
-* faster execution
-* better CPU utilization
-* reduced processing time
-
----
-
-# What is OpenMP?
-
-OpenMP is an API for parallel programming in C/C++.
-
-It uses compiler directives like:
-
-```cpp id="jlwmt3"
-#pragma omp parallel for
-```
-
-to create multiple threads automatically.
-
----
-
-# Bubble Sort
-
-## Definition
-
-Bubble Sort repeatedly compares adjacent elements and swaps them if they are in wrong order.
-
-Largest element “bubbles” to correct position after each pass.
-
----
-
-# Bubble Sort Example
-
-Initial array:
-
-```text id="jlwmt4"
-5 2 9 1 6
-```
-
-After passes:
-
-```text id="jlwmt5"
-2 5 1 6 9
-2 1 5 6 9
-1 2 5 6 9
+```text
+Visit node
+Spawn parallel tasks for different neighbors
+Threads explore subtrees simultaneously
 ```
 
 ---
 
-# Sequential Bubble Sort
+## Parallel DFS using OpenMP
 
-Your code:
+Usually implemented using:
 
-```cpp id="jlwmt6"
-void sequentialBubbleSort(vector<int>& arr)
+* OpenMP tasks
+
+Example concept:
+
+```cpp
+#pragma omp task
+DFS(neighbor);
 ```
 
-uses nested loops to compare adjacent elements sequentially. 
+Each recursive branch may execute in parallel.
 
 ---
 
-# Bubble Sort Time Complexity
+## Advantages of Parallel DFS
 
-| Case    | Complexity |
-| ------- | ---------- |
-| Best    | O(n)       |
-| Average | O(n²)      |
-| Worst   | O(n²)      |
+* Faster traversal in large trees/graphs
+* Efficient for divide-and-conquer problems
+* Useful in:
 
----
-
-# Bubble Sort Formula
-
-O(n^2)
+  * game trees
+  * AI search
+  * maze solving
+  * backtracking problems
 
 ---
 
-# Why Normal Bubble Sort Cannot Be Parallelized Directly?
+## Challenges in Parallel DFS
 
-Normal bubble sort has:
+### 1. Difficult Parallelization
 
-> Data dependency
+DFS depends heavily on recursion and traversal order.
 
-Example:
+Not all parts can run independently.
 
-```text id="jlwmt7"
-arr[j] and arr[j+1]
+---
+
+### 2. Race Conditions
+
+Multiple threads may access:
+
+* stack
+* visited array
+
+Needs synchronization.
+
+---
+
+### 3. Irregular Workload
+
+Some branches may be very deep while others are shallow.
+
+Threads may become idle.
+
+---
+
+# Comparison: Parallel BFS vs Parallel DFS
+
+| Feature                 | Parallel BFS            | Parallel DFS     |
+| ----------------------- | ----------------------- | ---------------- |
+| Traversal Style         | Level-wise              | Depth-wise       |
+| Main Data Structure     | Queue                   | Stack/Recursion  |
+| Ease of Parallelization | Easier                  | Harder           |
+| Parallelism Type        | Frontier-based          | Task-based       |
+| Synchronization Need    | Moderate                | High             |
+| Load Balancing          | Better                  | More difficult   |
+| Common OpenMP Construct | parallel for            | task             |
+| Applications            | Shortest path, networks | AI, backtracking |
+
+---
+
+# Time Complexity
+
+For both BFS and DFS:
+
+```text
+O(V + E)
 ```
-
-and
-
-```text id="jlwmt8"
-arr[j+1] and arr[j+2]
-```
-
-both modify same element.
-
-This creates:
-
-> Race condition
-
----
-
-# Race Condition
-
-Race condition occurs when:
-
-> Multiple threads access same memory simultaneously causing incorrect results.
-
----
-
-# Parallel Bubble Sort
-
-Your code uses:
-
-## Odd-Even Transposition Sort
-
-instead of standard bubble sort. 
-
----
-
-# Odd-Even Transposition
-
-Sorting occurs in phases.
-
----
-
-## Even Phase
-
-Compare:
-
-```text id="jlwmt9"
-(0,1) (2,3) (4,5)
-```
-
----
-
-## Odd Phase
-
-Compare:
-
-```text id="jlwmta"
-(1,2) (3,4) (5,6)
-```
-
-Now comparisons become independent.
-
-Safe for parallel execution.
-
----
-
-# OpenMP Directive Used
-
-```cpp id="jlwmtb"
-#pragma omp parallel for
-```
-
-Parallelizes loop iterations among multiple threads.
-
----
-
-# Parallel Bubble Sort Complexity
-
-Practical complexity:
-
-O\left(\frac{n^2}{P}+n\right)
 
 Where:
 
-* ( n ) = number of elements
-* ( P ) = processors
+* `V` = number of vertices
+* `E` = number of edges
+
+Parallel versions reduce execution time using multiple processors, although theoretical complexity remains similar.
 
 ---
 
-# Why Parallel Bubble Sort May Be Slower?
+# Role of OpenMP
 
-Because of:
+OpenMP is commonly used for implementing parallel BFS and DFS because it:
 
-* thread creation overhead
-* synchronization barriers
-* data dependency
-* small dataset size
+* supports multithreading
+* is easy to integrate with C/C++
+* provides:
 
----
+  * parallel loops
+  * tasks
+  * synchronization constructs
 
-# Merge Sort
+Common directives:
 
-## Definition
-
-Merge Sort uses:
-
-> Divide and Conquer technique
-
-Steps:
-
-1. Divide array into halves
-2. Sort halves recursively
-3. Merge sorted halves
-
----
-
-# Merge Sort Representation
-
-Divide \rightarrow Sort \rightarrow Merge
-
----
-
-# Merge Function
-
-Your merge function combines two sorted halves. 
-
----
-
-# Sequential Merge Sort
-
-Implemented recursively using:
-
-```cpp id="jlwmtc"
-sequentialMergeSort(arr,left,right)
-```
-
-
-
----
-
-# Recursion
-
-Recursion means:
-
-> Function calling itself repeatedly.
-
-Base condition:
-
-```cpp id="jlwmtd"
-if(left >= right)
-```
-
-stops recursion.
-
----
-
-# Merge Sort Complexity
-
-| Case    | Complexity |
-| ------- | ---------- |
-| Best    | O(n log n) |
-| Average | O(n log n) |
-| Worst   | O(n log n) |
-
----
-
-# Merge Sort Formula
-
-T(n)=2T\left(\frac{n}{2}\right)+O(n)
-
----
-
-# Why Merge Sort is Good for Parallelism?
-
-Because:
-
-* left half independent
-* right half independent
-
-Both can execute simultaneously.
-
----
-
-# Parallel Merge Sort
-
-Your code uses:
-
-```cpp id="jlwmte"
+```cpp
+#pragma omp parallel for
+#pragma omp critical
 #pragma omp task
-```
-
-to create parallel recursive tasks. 
-
----
-
-# OpenMP Tasks
-
-Tasks are lightweight parallel jobs scheduled by OpenMP runtime.
-
-Advantages:
-
-* efficient recursion
-* avoids repeated thread creation
-* dynamic scheduling
-
----
-
-# Taskwait
-
-```cpp id="jlwmtf"
-#pragma omp taskwait
-```
-
-waits until child tasks complete before merge step.
-
----
-
-# Why Not Use `parallel sections` Recursively?
-
-Your code correctly explains this. 
-
-Recursive `parallel sections` would create:
-
-```text id="jlwmtg"
-thousands of thread teams
-```
-
-causing huge overhead.
-
-Tasks are more efficient.
-
----
-
-# Depth Cutoff
-
-Your code uses:
-
-```cpp id="jlwmth"
-depth <= 0
-```
-
-to switch to sequential merge sort for small subarrays. 
-
-Reason:
-
-> Task overhead may exceed useful work for very small arrays.
-
----
-
-# Performance Measurement
-
-Your code uses:
-
-```cpp id="jlwmti"
-omp_get_wtime()
-```
-
-for timing. 
-
----
-
-# Execution Time Formula
-
-Execution\ Time = End\ Time - Start\ Time
-
----
-
-# Speedup
-
-Measures parallel performance improvement.
-
-Formula:
-
-Speedup = \frac{Sequential\ Time}{Parallel\ Time}
-
----
-
-# Interpretation
-
-| Speedup | Meaning           |
-| ------- | ----------------- |
-| > 1     | Parallel faster   |
-| < 1     | Sequential faster |
-
----
-
-# Space Complexity
-
-| Algorithm   | Space |
-| ----------- | ----- |
-| Bubble Sort | O(1)  |
-| Merge Sort  | O(n)  |
-
-Merge sort needs temporary arrays.
-
----
-
-# Advantages of Parallel Merge Sort
-
-* highly scalable
-* efficient parallelism
-* lower complexity
-* better for large datasets
-
----
-
-# Limitations
-
-* synchronization overhead
-* task management overhead
-* memory usage in merge sort
-
----
-
-# Expected Output
-
-Example:
-
-```text id="jlwmtj"
-Sequential Bubble Sort time: 0.95 seconds
-Parallel Bubble Sort time: 0.28 seconds
-
-Sequential Merge Sort time: 0.01 seconds
-Parallel Merge Sort time: 0.002 seconds
+#pragma omp atomic
 ```
 
 ---
 
-# Important Viva Questions
+# Real-World Applications
+
+## BFS Applications
+
+* GPS shortest path
+* Social network friend suggestions
+* Network broadcasting
+* Web crawlers
+
+## DFS Applications
+
+* Cycle detection
+* Topological sorting
+* Maze solving
+* Backtracking algorithms
+* AI game trees
 
 ---
 
-## What is OpenMP?
+# Conclusion
 
-OpenMP is an API for shared-memory parallel programming.
-
----
-
-## Why use parallel sorting?
-
-To improve performance using multiple processors.
-
----
-
-## Why is Bubble Sort difficult to parallelize?
-
-Because adjacent swaps have data dependency.
-
----
-
-## What is Odd-Even Transposition?
-
-Parallel version of Bubble Sort using alternating odd/even phases.
-
----
-
-## Why Merge Sort better for parallelism?
-
-Because subarrays can be processed independently.
-
----
-
-## What is recursion?
-
-Function calling itself repeatedly.
-
----
-
-## What is task parallelism?
-
-Breaking work into independent tasks executed simultaneously.
-
----
-
-## What does `#pragma omp task` do?
-
-Creates parallel tasks in OpenMP.
-
----
-
-## What is race condition?
-
-Simultaneous access/modification of shared data causing incorrect results.
-
----
-
-## What is speedup?
-
-Ratio of sequential execution time to parallel execution time.
-
----
-
-## Why use depth cutoff in parallel merge sort?
-
-To avoid task overhead for very small subarrays.
-
----
-
-## Difference between sequential and parallel algorithms?
-
-| Sequential            | Parallel                 |
-| --------------------- | ------------------------ |
-| One thread            | Multiple threads         |
-| Slower for large data | Faster for large data    |
-| Simpler               | Requires synchronization |
+* **Parallel BFS** is easier and more efficient because nodes at the same level can be processed simultaneously.
+* **Parallel DFS** is more complex due to recursive and sequential nature, but parallel tasks can still improve performance.
+* OpenMP helps implement both algorithms using multithreading techniques.
+* Parallel graph traversal is important in modern high-performance computing and large-scale data processing systems.
 */
