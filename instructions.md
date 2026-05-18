@@ -25,3 +25,33 @@ To install dl packages:-
 !pip install tensorflow pandas numpy matplotlib scikit-learn seaborn
 versions:-
 !pip install tensorflow==2.15.0 numpy==1.26.4 pandas==2.2.2 matplotlib==3.8.4 scikit-learn==1.4.2 seaborn==0.13.2 pillow==10.3.0 opencv-python==4.9.0.80 notebook==7.2.0
+
+if python version issue ie tensorflow not working:
+
+# 1. Create TensorFlow environment with Python 3.10
+
+conda create -n tf_env python=3.10 -y
+
+# 2. Activate environment
+
+conda activate tf_env
+
+# 3. Install TensorFlow
+
+pip install tensorflow==2.15.0
+
+# 4. Install Jupyter kernel support
+
+pip install ipykernel
+
+# 5. Add this environment as Jupyter kernel
+
+python -m ipykernel install --user --name=tf_env
+
+# 6. Start Jupyter Notebook
+
+jupyter notebook
+
+Then inside Jupyter Notebook:
+
+Kernel → Change Kernel → tf_env
